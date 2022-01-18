@@ -176,9 +176,28 @@ void UBltBPLibrary::RandomiseStringProperty(
 		return;
 	}
 	
+	const FString& RandomString = PythonBridge->GenerateStringFromRegex(PropertyValue->AsString());
+
 	const FStrProperty* const StringProperty = CastField<const FStrProperty>(Property);
-	StringProperty->SetPropertyValue_InContainer(
-		Actor,
-		PythonBridge->GenerateStringFromRegex(PropertyValue->AsString())
-	);
+	if (StringProperty)
+	{
+		StringProperty->SetPropertyValue_InContainer(Actor, RandomString);
+		return;
+	}
+	
+	const FNameProperty* const NameProperty = CastField<const FNameProperty>(Property);
+	if (NameProperty)
+	{
+		NameProperty->SetPropertyValue_InContainer(Actor, FName(RandomString));
+		return;
+	}
+
+	const FTextProperty* const TextProperty = CastField<const FTextProperty>(Property);
+	if (TextProperty)
+	{
+		TextProperty->SetPropertyValue_InContainer(Actor, FText::FromString(RandomString));
+		return;
+	}
+
+	UE_LOG(LogBlt, Fatal, TEXT("%s is not FString, FName or FText!"), *Property->GetFullName());
 }
