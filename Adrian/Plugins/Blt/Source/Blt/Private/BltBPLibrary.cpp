@@ -1,7 +1,9 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "BltBPLibrary.h"
+
 #include "Kismet/GameplayStatics.h"
+#include "PythonBridge.h"
 
 DEFINE_LOG_CATEGORY(LogBlt);
 
@@ -151,8 +153,8 @@ void UBltBPLibrary::RandomiseNumericProperty(
 )
 {
 	const TArray<TSharedPtr<FJsonValue>>& Interval = PropertyValue->AsArray();
-	const float IntervalMin = Interval[0].Get()->AsNumber();
-	const float IntervalMax = Interval[1].Get()->AsNumber();
+	const float IntervalMin = Interval[0u].Get()->AsNumber();
+	const float IntervalMax = Interval[1u].Get()->AsNumber();
 							
 	const FNumericProperty* const NumericProperty = CastField<const FNumericProperty>(Property);
 	NumericProperty->SetNumericPropertyValueFromString(
@@ -167,8 +169,16 @@ void UBltBPLibrary::RandomiseStringProperty(
 	AActor* const Actor
 )
 {
-	// TODO...
+	const UPythonBridge* const PythonBridge = UPythonBridge::Get();
+	if (!PythonBridge)
+	{
+		UE_LOG(LogBlt, Error, TEXT("Python bridge could not be instantiated!"));
+		return;
+	}
 	
 	const FStrProperty* const StringProperty = CastField<const FStrProperty>(Property);
-	StringProperty->SetPropertyValue_InContainer(Actor, PropertyValue->AsString());
+	StringProperty->SetPropertyValue_InContainer(
+		Actor,
+		PythonBridge->GenerateStringFromRegex(PropertyValue->AsString())
+	);
 }
