@@ -3,7 +3,7 @@
 #pragma once
 
 
-class FBltModule final : public IModuleInterface
+class FBltModule : public IModuleInterface
 {
 public:
 	virtual void StartupModule() override;

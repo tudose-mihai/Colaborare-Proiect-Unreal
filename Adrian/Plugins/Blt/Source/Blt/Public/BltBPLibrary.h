@@ -8,7 +8,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogBlt, Log, All);
 
 
 UCLASS(Abstract)
-class UBltBPLibrary final : public UBlueprintFunctionLibrary
+class UBltBPLibrary : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 	
