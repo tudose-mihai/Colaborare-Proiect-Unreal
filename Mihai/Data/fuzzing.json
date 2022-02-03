@@ -1,0 +1,12 @@
+{
+	"GameTestingCharacter": {
+		"BaseTurnRate": [45, 90],
+		"Health": [0, 100],
+		"Name": "Hello, [\\d]{1-4} [World]!"
+	},
+	"MyCharacter": {
+		"test_WalkSpeed": [45, 900],
+
+		"Name": "Hello, [\\d]{1-4} [World]!"
+	}
+}
