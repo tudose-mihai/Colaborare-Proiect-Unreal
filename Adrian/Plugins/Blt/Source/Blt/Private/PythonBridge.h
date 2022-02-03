@@ -5,8 +5,8 @@
 #include "PythonBridge.generated.h"
 
 
-UCLASS(Abstract, Blueprintable)
-class BLT_API UPythonBridge final : public UObject
+UCLASS(Abstract, Blueprintable, MinimalAPI)
+class UPythonBridge : public UObject
 {
 	GENERATED_BODY()
 
