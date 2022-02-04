@@ -8,7 +8,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogBlt, Log, All);
 
 
 UCLASS(Abstract)
-class UBltBPLibrary : public UBlueprintFunctionLibrary
+class UBltBPLibrary final : public UBlueprintFunctionLibrary
 {
 	GENERATED_BODY()
 	
@@ -18,7 +18,11 @@ class UBltBPLibrary : public UBlueprintFunctionLibrary
 	static bool GetAbsolutePath(const FString& FilePath, FString& AbsoluteFilePath);
 	
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Game Testing")
-	static UClass* FindClass(const FString& ClassName);
+	static UClass* FindClass(
+		const FString& ClassName,
+		const bool& bExactClass = false,
+		UObject* const Package = nullptr
+	);
 	
 	UFUNCTION(BlueprintCallable, Category = "Game Testing", meta = (WorldContext = "WorldContextObject"))
 	static TArray<AActor*> GetAllActorsOfClass(const UObject* const WorldContextObject, const FString& ActorClassName);
@@ -31,7 +35,7 @@ class UBltBPLibrary : public UBlueprintFunctionLibrary
 	);
 	
 	UFUNCTION(BlueprintCallable, Category = "Game Testing", meta = (
-		DisplayName = "ApplyFuzzing",
+		DisplayName = "Apply Fuzzing",
 		WorldContext = "WorldContextObject",
 		AutoCreateRefTerm = "AffectedActors"
 	))
@@ -43,19 +47,20 @@ class UBltBPLibrary : public UBlueprintFunctionLibrary
 	);
 
 	static void RandomiseProperties(
-		const TSharedPtr<FJsonObject>* ActorClassObject,
-		const TArray<AActor*>& Actors
+		AActor* const& Actor,
+		const UClass* const& JsonActorClassType,
+		const TMap<FString, TSharedPtr<FJsonValue>>& ActorClassProperties
 	);
 	
 	static void RandomiseNumericProperty(
+		AActor* const Actor,
 		const FProperty* const Property,
-		const FJsonValue* const PropertyValue,
-		AActor* const Actor
+		const FJsonValue* const PropertyValue = nullptr
 	);
 	
 	static void RandomiseStringProperty(
+		AActor* const Actor,
 		const FProperty* const Property,
-		const FJsonValue* const PropertyValue,
-		AActor* const Actor
+		const FJsonValue* const PropertyValue = nullptr
 	);
 };

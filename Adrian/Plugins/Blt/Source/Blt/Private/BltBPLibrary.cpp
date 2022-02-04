@@ -41,16 +41,19 @@ bool UBltBPLibrary::GetAbsolutePath(const FString& FilePath, FString& AbsoluteFi
 	return false;
 }
 
-UClass* UBltBPLibrary::FindClass(const FString& ClassName)
+UClass* UBltBPLibrary::FindClass(const FString& ClassName, const bool& bExactClass, UObject* const Package)
 {
 	check(*ClassName);
+	UObject* const Outer = Package ? Package : ANY_PACKAGE;
 	
-	if (UClass* const ClassType = FindObject<UClass>(ANY_PACKAGE, *ClassName))
+	if (UClass* const ClassType = FindObject<UClass>(Outer, *ClassName, bExactClass))
 		return ClassType;
 
-	if (const UObjectRedirector* const RenamedClassRedirector = FindObject<UObjectRedirector>(ANY_PACKAGE, *ClassName))
+	if (const UObjectRedirector* const RenamedClassRedirector
+		= FindObject<UObjectRedirector>(Outer, *ClassName, bExactClass))
 		return CastChecked<UClass>(RenamedClassRedirector->DestinationObject);
 
+	UE_LOG(LogBlt, Warning, TEXT("Class %s could not be found!"), *ClassName);
 	return nullptr;
 }
 
@@ -61,9 +64,7 @@ TArray<AActor*> UBltBPLibrary::GetAllActorsOfClass(
 {
 	const TSubclassOf<AActor> ActorClass = FindClass(ActorClassName);
 	if (!ActorClass)
-	{
-		UE_LOG(LogBlt, Warning, TEXT("Class %s could not be found!"), *ActorClassName);
-	}
+		return TArray<AActor*>();
 
 	TArray<AActor*> OutActors;
 	UGameplayStatics::GetAllActorsOfClass(WorldContextObject->GetWorld(), ActorClass, OutActors);
@@ -85,6 +86,10 @@ void UBltBPLibrary::ApplyFuzzing(
 	for (const TTuple<FString, TSharedPtr<FJsonValue>>& JsonClass : JsonClasses)
 	{
 		const FString& ActorClassName = JsonClass.Key;
+		const UClass* const& JsonActorClassType = FindClass(ActorClassName);
+		if (!JsonActorClassType)
+			continue;
+		
 		const TSharedPtr<FJsonObject>* ActorClassObject;
 		if (!JsonClass.Value->TryGetObject(ActorClassObject))
 		{
@@ -92,10 +97,12 @@ void UBltBPLibrary::ApplyFuzzing(
 			continue;
 		}
 
-		RandomiseProperties(
-			ActorClassObject,
-			bUseArray ? AffectedActors : GetAllActorsOfClass(WorldContextObject, ActorClassName)
-		);
+		const TMap<FString, TSharedPtr<FJsonValue>>& ActorClassProperties = ActorClassObject->Get()->Values;
+		for (AActor* const& Actor :
+			bUseArray ? AffectedActors : GetAllActorsOfClass(WorldContextObject, ActorClassName))
+		{
+			RandomiseProperties(Actor, JsonActorClassType, ActorClassProperties);
+		}
 	}
 }
 
@@ -110,63 +117,85 @@ void UBltBPLibrary::K2ApplyFuzzing(
 }
 
 void UBltBPLibrary::RandomiseProperties(
-	const TSharedPtr<FJsonObject>* ActorClassObject,
-	const TArray<AActor*>& Actors
+	AActor* const& Actor,
+	const UClass* const& JsonActorClassType,
+	const TMap<FString, TSharedPtr<FJsonValue>>& ActorClassProperties
 )
 {
-	const TMap<FString, TSharedPtr<FJsonValue>> ActorClassProperties = ActorClassObject->Get()->Values;
+	const UClass* const& ActorClass = Actor->GetClass();
+	if (!Actor || !ActorClass->IsChildOf(JsonActorClassType))
+		return;
 	
-	for (AActor* const Actor : Actors)
+	for (TFieldIterator<FProperty> Iterator(ActorClass); Iterator; ++Iterator)
 	{
-		if (!Actor)
-			continue;
+		const FProperty* const Property = *Iterator;
+		const FString& PropertyName = Property->GetNameCPP();
 		
-		for (TFieldIterator<FProperty> Iterator(Actor->GetClass()); Iterator; ++Iterator)
+		if (!ActorClassProperties.Contains(PropertyName))
 		{
-			const FProperty* const Property = *Iterator;
-			const FString& PropertyName = Property->GetNameCPP();
-			if (!ActorClassProperties.Contains(PropertyName))
-				continue;
-
-			const FJsonValue* const PropertyValue = ActorClassProperties.Find(PropertyName)->Get();
-			switch (PropertyValue->Type)
-			{
-			case EJson::Array:
-				RandomiseNumericProperty(Property, PropertyValue, Actor);
-				break;
-
-			case EJson::String:
-				RandomiseStringProperty(Property, PropertyValue, Actor);
-				break;
-				
-			default:
-				break;
+			if (Property->GetOwnerClass()->IsChildOf(JsonActorClassType)) {
+				UE_LOG(LogBlt, Warning, TEXT("%s"), *PropertyName);
+				RandomiseNumericProperty(Actor, Property);
+				RandomiseStringProperty(Actor, Property);
 			}
+			continue;
+		}
+
+		const FJsonValue* const PropertyValue = ActorClassProperties.Find(PropertyName)->Get();
+		switch (PropertyValue->Type)
+		{
+		case EJson::Array:
+			RandomiseNumericProperty(Actor, Property, PropertyValue);
+			break;
+
+		case EJson::String:
+			RandomiseStringProperty(Actor, Property, PropertyValue);
+			break;
+				
+		default:
+			break;
 		}
 	}
 }
 
 void UBltBPLibrary::RandomiseNumericProperty(
+	AActor* const Actor,
 	const FProperty* const Property,
-	const FJsonValue* const PropertyValue,
-	AActor* const Actor
+	const FJsonValue* const PropertyValue
 )
 {
-	const TArray<TSharedPtr<FJsonValue>>& Interval = PropertyValue->AsArray();
-	const float IntervalMin = Interval[0u].Get()->AsNumber();
-	const float IntervalMax = Interval[1u].Get()->AsNumber();
-							
-	const FNumericProperty* const NumericProperty = CastField<const FNumericProperty>(Property);
-	NumericProperty->SetNumericPropertyValueFromString(
-		NumericProperty->ContainerPtrToValuePtr<float>(Actor),
-		*FString::Printf(TEXT("%f"), FMath::RandRange(IntervalMin, IntervalMax))
+	const TArray<TSharedPtr<FJsonValue>>& Interval = PropertyValue ?
+		PropertyValue->AsArray() : TArray<TSharedPtr<FJsonValue>>();
+	
+	const float& RandomNumber = FMath::FRandRange(
+	Interval.Num() > 0u ?
+		Interval[0u].Get()->AsNumber() : 0.0f,
+		
+	Interval.Num() > 1u ?
+		Interval[1u].Get()->AsNumber() : FMath::FRandRange(0.0f, static_cast<float>(RAND_MAX))
 	);
+	
+	if (const FNumericProperty* const NumericProperty = CastField<const FNumericProperty>(Property))
+	{
+		NumericProperty->SetNumericPropertyValueFromString(
+			NumericProperty->ContainerPtrToValuePtr<float>(Actor),
+			*FString::Printf(TEXT("%f"), RandomNumber)
+		);
+	}
+	else if (const FBoolProperty* const BoolProperty = CastField<const FBoolProperty>(Property))
+	{
+		BoolProperty->SetPropertyValue_InContainer(Actor, static_cast<uint8>(RandomNumber) % 2u);
+	}
+	else if (PropertyValue)
+	{
+		UE_LOG(LogBlt, Error, TEXT("%s is not Numeric!"), *Property->GetFullName());
+	}
 }
 
 void UBltBPLibrary::RandomiseStringProperty(
+	AActor* const Actor,
 	const FProperty* const Property,
-	const FJsonValue* const PropertyValue,
-	AActor* const Actor
+	const FJsonValue* const PropertyValue
 )
 {
 	const UPythonBridge* const PythonBridge = UPythonBridge::Get();
@@ -176,28 +205,24 @@ void UBltBPLibrary::RandomiseStringProperty(
 		return;
 	}
 	
-	const FString& RandomString = PythonBridge->GenerateStringFromRegex(PropertyValue->AsString());
-
-	const FStrProperty* const StringProperty = CastField<const FStrProperty>(Property);
-	if (StringProperty)
+	const FString& RandomString = PythonBridge->GenerateStringFromRegex(
+		PropertyValue ? PropertyValue->AsString() : "[\\w\\W\\s\\S\\d\\D]{:255}"
+	);
+	
+	if (const FStrProperty* const StringProperty = CastField<const FStrProperty>(Property))
 	{
 		StringProperty->SetPropertyValue_InContainer(Actor, RandomString);
-		return;
 	}
-	
-	const FNameProperty* const NameProperty = CastField<const FNameProperty>(Property);
-	if (NameProperty)
+	else if (const FNameProperty* const NameProperty = CastField<const FNameProperty>(Property))
 	{
 		NameProperty->SetPropertyValue_InContainer(Actor, FName(RandomString));
-		return;
 	}
-
-	const FTextProperty* const TextProperty = CastField<const FTextProperty>(Property);
-	if (TextProperty)
+	else if (const FTextProperty* const TextProperty = CastField<const FTextProperty>(Property))
 	{
 		TextProperty->SetPropertyValue_InContainer(Actor, FText::FromString(RandomString));
-		return;
 	}
-
-	UE_LOG(LogBlt, Fatal, TEXT("%s is not FString, FName or FText!"), *Property->GetFullName());
+	else if (PropertyValue)
+	{
+		UE_LOG(LogBlt, Error, TEXT("%s is not FString, FName or FText!"), *Property->GetFullName());
+	}
 }
